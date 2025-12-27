@@ -1,6 +1,8 @@
 // export function HeaderarrayToReactSpreadsheetRow(headerArr){
 //     return headerArr.map(h => ({ value: h }));
 // }
+
+//this function returns the first row which is column header row
 export function HeaderarrayToReactSpreadsheetRow(firstRowFields){
     const emptyRow = [...Array(27)].map(() => ({}));
 
@@ -13,12 +15,15 @@ export function HeaderarrayToReactSpreadsheetRow(firstRowFields){
 
 }
 
+
+//first row of the test case ni return chesthadhi
 export function firstRowJsonToReactSpreadsheetRow(headerArr, firstRowFields){
     const emptyRow = [...Array(27)].map(() => ({}));
 
     Object.entries(firstRowFields).map(([fieldName, fieldObj]) => {
         if(fieldObj.type === "STATIC" || fieldObj.type === "PREFIX+SEQUENCE" || fieldObj.type === "CATEGORICAL")
             emptyRow[fieldObj.index] = {value : fieldObj.value+"Random"}
+            console.log("firstRowJsonToReactSpreadsheetRow", emptyRow[fieldObj.index]);
             return null; 
         })
 
@@ -36,10 +41,11 @@ export function firstRowJsonToReactSpreadsheetRow(headerArr, firstRowFields){
     // return firstRow;
 }
 
-export function testCaseRowsGenerator(firstRowFields, testCaseData){
+//oka full test case ni return chesthadhi - including first row and step rows
+export function testCaseRowsGenerator(firstRowFields, testCaseData,testCaseCounter){
     // const 
 
-    const firstRowCellValues = firstRowGenerator(firstRowFields, testCaseData);
+    const firstRowCellValues = firstRowGenerator(firstRowFields, testCaseData, testCaseCounter);
 
     const stepRowsCellValues = stepRowsGenerator(3, 4, 5, testCaseData);
 
@@ -61,7 +67,8 @@ export function firstRowGenerator(firstRowFields, testCaseData){
             newRow[fieldObj.index] = {value : fieldObj.value}
         }
         else if(fieldObj.type === "PREFIX+SEQUENCE"){
-            newRow[fieldObj.index] = {value: fieldObj.value+formatNumber(testCaseData.testCaseIndex)}
+            //here we are just adding prefix, so at the last phase of the excel we will add the sequence numbers
+            newRow[fieldObj.index] = {value: fieldObj.value}
         }
         else if(fieldObj.type === "DYNAMIC"){
             if(fieldName === "Title"){
@@ -187,4 +194,22 @@ export function downloadExcel(data,  XLSX) {
       // 4. Trigger browser download
       XLSX.writeFile(wb, "testcases.xlsx");
     }
+}
+
+export function testCasesWithCorrectSequenceNumbers(scenarioIdValue, testCaseIdValue, finalTestCaseRows){
+    let testCaseCounter = 0;
+    // console.log("length of final test case rows",finalTestCaseRows.length )
+    for(const row of finalTestCaseRows){
+        
+        //checking if it is an first row 
+        if(row[1]?.value && row[1].value.length !== 0){
+            testCaseCounter++;
+            console.log("row 10", row[10]);
+            console.log("row 17", row[17]);
+            row[10].value += formatNumber(testCaseCounter);
+            row[17].value += formatNumber(testCaseCounter);
+        }
+    }
+
+    return finalTestCaseRows;
 }

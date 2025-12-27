@@ -1,10 +1,10 @@
-import { createContext, useContext, useState } from "react";
+import { createContext, useContext, useEffect, useState } from "react";
 import { IDBContext, ListOfTestCasesDataContext, TestCaseFileNameContext, TestCaseTemplateContext } from "../../App";
 import TopFoldNavSheet from "./TopFoldNavSheet";
 import LeftMain from "./LeftMain";
 import RightMain from "./RightMain";
 import { useNavigate } from "react-router-dom";
-import { putToStore } from "../../util/dbUtil";
+import { openDB, putToStore } from "../../util/dbUtil";
 import { Brain, Upload } from "lucide-react";
 import PromptJsonDialog from "./PromptDialog";
 import ExitConfirmationDialog from "./ExitConfirmationDialog";
@@ -25,16 +25,29 @@ export default function Create() {
 
     const navigate = useNavigate();
     const [fading, setFading] = useState(false);
-    const { iDBConnection } = useContext(IDBContext);
+    const { iDBConnection, setIDBConnection } = useContext(IDBContext);
+
+    const updateModifiedOnInMetadataStore = async () => {
+        try {
+            const result = await putToStore(iDBConnection, "testCaseFileMetadata", { fileName: testCaseFileName, modifiedOn: new Date().toISOString() });
+        } catch (error) {
+            console.log("error on updating modifiedOn in metadata store", error);
+        }
+    };
 
     const saveOnIndexedDBFunc = async () => {
+        console.log("inside saveOnIndexedDBFunc");
         try {
             const result = await putToStore(iDBConnection, "testCaseData", { fileName: testCaseFileName, listOfTestCasesData, firstRowFields });
             console.log("on record insertion to db,", result);
             // setIsUnsaved(false);
-            if (result && result.success) {
+            // if (result && result.success) {
+            if(!!result){ //checking if result is not null or undefined because putToStore returns the key of the stored record on success
+                //reinserting the record with same filename with the updated modifiedOn field name will result in updating the existing record's modifiedOn field                
+                const result = await putToStore(iDBConnection, "testCaseFileMetadata", { fileName: testCaseFileName, modifiedOn: new Date().toISOString() });
                 console.log("Record saved:", result);
-                setIsUnsaved(false);
+                
+                if(!!result) setIsUnsaved(false);
             }
         }
         catch (error) {
@@ -42,6 +55,21 @@ export default function Create() {
         }
     }
 
+    
+
+    useEffect(()=>{
+        if(!iDBConnection){
+              (async () => {
+              try {
+                // Open DB and create store if not present
+                const db = await openDB("TestCaseDB", 1);
+                setIDBConnection(db);      
+              } catch (err) {
+                console.error("Failed to open/load DB:", err);
+              }
+            })();
+            }
+    },[]);
 
     const onSubmitingAIResponse = (jsonText) => {
         // default submit handler — you can override by passing a prop

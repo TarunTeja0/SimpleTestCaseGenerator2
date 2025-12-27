@@ -3,10 +3,10 @@ import ReactDOM from "react-dom";
 import { TestCaseFileNameContext } from "../../App";
 import { useNavigate } from "react-router-dom";
 
-export default function Dialog({ open, onClose, onSave }) {
+export default function Dialog({ open, onClose, onSave, onRename, title, newOrRename, initialFileName="" }) {
   const dialogRef = useRef(null);
   const previousActiveRef = useRef(null);
-  const [fileNameInput, setFileNameInput] = useState("");
+  const [fileNameInput, setFileNameInput] = useState(initialFileName);
   
   const navigate = useNavigate();
   const [shouldNavigate, setShouldNavigate] = useState(false);
@@ -24,8 +24,10 @@ export default function Dialog({ open, onClose, onSave }) {
   }, [open, onClose]);
 
   useEffect(()=>{
-    if(shouldNavigate && testCaseFileName!=""){
+    if(newOrRename==="new"){
+      if(shouldNavigate && testCaseFileName!=""){
         navigate("/create?filename="+testCaseFileName)
+      }
     }
   }, [testCaseFileName, shouldNavigate, navigate]);
 
@@ -40,6 +42,19 @@ export default function Dialog({ open, onClose, onSave }) {
   }, [open]);
 
   if (!open) return null;
+
+  const onSubmit = () => {
+    if(newOrRename === "rename"){
+      console.log("renaming to:", fileNameInput);
+      onRename(fileNameInput);
+      onClose();
+    }
+    else if(newOrRename === "new"){
+      saveTestCaseFileNameFunc(fileNameInput);
+      onSave(fileNameInput);
+      setShouldNavigate(true);
+    }
+  }
 
   return ReactDOM.createPortal(
     <div
@@ -64,7 +79,7 @@ export default function Dialog({ open, onClose, onSave }) {
           <div className="flex items-start justify-between">
             <h2 id="dialog-title" className="text-xl font-semibold text-gray-800">
               {/* {title} */}
-              Create new Test Cases
+              {title ? title : "Dialog Title"}
             </h2>
             
             <button
@@ -85,7 +100,8 @@ export default function Dialog({ open, onClose, onSave }) {
                     placeholder=" " // <-- important for peer-placeholder-shown
                     className="peer block w-full rounded-md border border-gray-300 bg-transparent px-3 pt-5 pb-2 text-gray-900 placeholder-transparent focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                     value={fileNameInput}
-                    onChange={(e)=>setFileNameInput(e.target.value)}
+                    onChange={(e)=>{e.stopPropagation(); setFileNameInput(e.target.value);}}
+                    onFocus={e=>e.stopPropagation()}
                 />
                 <label
                     htmlFor="test"
@@ -109,9 +125,7 @@ export default function Dialog({ open, onClose, onSave }) {
             <button
               onClick={() => {
                 // TODO: handle submit/save here
-                saveTestCaseFileNameFunc(fileNameInput);
-                onSave(fileNameInput);
-                setShouldNavigate(true);
+                onSubmit(fileNameInput);
 
               }}
               className="rounded-lg bg-blue-600 px-4 py-2 text-white hover:bg-blue-700"

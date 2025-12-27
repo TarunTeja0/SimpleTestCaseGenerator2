@@ -4,7 +4,7 @@ import * as XLSX from "xlsx";
 import Lodash from "lodash"
 
 import { useEffect, useRef } from "react";
-import { downloadExcel, duplicateTestCasesBySegmentsAndTags, firstRowJsonToReactSpreadsheetRow, HeaderarrayToReactSpreadsheetRow, testCaseRowsGenerator } from "../../util/reactSpreadsheetUtil";
+import { downloadExcel, duplicateTestCasesBySegmentsAndTags, firstRowJsonToReactSpreadsheetRow, HeaderarrayToReactSpreadsheetRow, testCaseRowsGenerator, testCasesWithCorrectSequenceNumbers } from "../../util/reactSpreadsheetUtil";
 import { ListOfTestCasesDataContext, TestCaseTemplateContext } from "../../App";
 import PreviewTopBar from "./PreviewTopBar";
 // import Spreadsheet from "react-spreadsheet";
@@ -27,6 +27,7 @@ export default function FixedWidthSpreadsheetJS() {
 
   const {listOfTestCasesData} = useContext(ListOfTestCasesDataContext);
   
+  //returns all the rows of all the test cases without the prefix 
   const arrayOfArrayOfRows = listOfTestCasesData.map((testCaseData)=>{
     const arrayOfRow =testCaseRowsGenerator(firstRowFields, testCaseData);
     return arrayOfRow;
@@ -37,8 +38,10 @@ export default function FixedWidthSpreadsheetJS() {
   //each array inside this array is a row
   const arrayOfRows = arrayOfArrayOfRows.flat();
 
-  const finalTestCaseRows = duplicateTestCasesBySegmentsAndTags(arrayOfRows, firstRowFields["Custom.UserRole"].value, firstRowFields["Tags"].value, Lodash)
+  let finalTestCaseRows = duplicateTestCasesBySegmentsAndTags(arrayOfRows, firstRowFields["Custom.UserRole"].value, firstRowFields["Tags"].value, Lodash)
+  console.log("finalTestCaseRows", finalTestCaseRows.length);
 
+  finalTestCaseRows = testCasesWithCorrectSequenceNumbers(firstRowFields["Custom.ScenarioID"], firstRowFields["Custom.TestCaseID"], finalTestCaseRows);
   // const arrayOfRows = useRef(arrayOfArrayOfRows.flat());
   
   // useEffect(()=>setData(),[]);

@@ -3,8 +3,12 @@ import React, { useContext, useEffect, useRef, useState } from "react";
 import Dialog from "./Dialog";
 import HomeTestCaseCard from "./HomeTestCaseCard";
 import { tr } from "framer-motion/client";
-import { getAllFilesMetadataFromStore, openDB, putToStore } from "../../util/dbUtil";
+import { fileExists, generateUniqueFileName, getAllFilesMetadataFromStore, openDB, putToStore } from "../../util/dbUtil";
 import { IDBContext } from "../../App";
+import FilePicker from "./FilePicker";
+import excelReader from "../../util/excelReader";
+import convertArrayOfRowsIntoListOfTestCases from "../../util/convertArrayOfRowsIntoListOfTestCases";
+import { useNavigate } from "react-router-dom";
 
 
 
@@ -15,13 +19,16 @@ import { IDBContext } from "../../App";
 export default function Home() {
     const [openDialog, setOpenDialog] = useState(false);
 
-    const [files, setFiles] = useState([]); // store objects: { fileName, createdOn }
+    const [files, setFiles] = useState([]); // store objects: { fileName, modifiedOn }
     const [loading, setLoading] = useState(true);
     const dbRef = useRef(null);
 
     const [fading, setFading] = useState(false);
 
     const {iDBConnection, setIDBConnection} = useContext(IDBContext);
+
+    const navigate = useNavigate();
+    const [isImported, setIsImported] = useState(false);
 
   // const cards = [
   //   { id: 1, title: "Card 1", description: "This is card one." },
@@ -34,46 +41,13 @@ export default function Home() {
     if(iDBConnection){
       (async () => {
         try {
-          // // Open DB and create store if not present
-          // const db = await openDB("TestCaseDB", 1, (db) => {
-          //   // This runs only when DB is first created or version changes
-          //   if (!db.objectStoreNames.contains("testCaseFileMetadata")) {
-          //     // Use fileName as primary key so it's unique per file
-          //     const store = db.createObjectStore("testCaseFileMetadata", {
-          //       keyPath: "fileName",
-          //     });
-          //     // createIndex if you want to query by createdOn etc later
-          //     store.createIndex("by_createdOn", "createdOn", { unique: false });
-          //   }
-  
-          //   if (!db.objectStoreNames.contains("testCaseData")) {
-          //     // Use fileName as primary key so it's unique per file
-          //     const store = db.createObjectStore("testCaseData", {
-          //       keyPath: "fileName",
-          //     });
-          //     // // createIndex if you want to query by createdOn etc later
-          //     // store.createIndex("by_createdOn", "createdOn", { unique: false });
-          //   }
-          // });
-  
-          // Optional: listen for versionchange so other tabs can't break things
-          // db.onversionchange = () => {
-          //   db.close();
-          //   // If you want, notify user to reload. Keep simple here.
-          //   console.warn("Database version changed elsewhere — reloading recommended.");
-          // };
-  
-          // dbRef.current = db;
-          // setIDBConnection(db);
-  
-          // Load all file metadata into state
-  
+         
           console.log("home lo inside useEffect", iDBConnection?.transaction("testCaseFileMetadata","readonly"));
   
           const all = await getAllFilesMetadataFromStore(iDBConnection, "testCaseFileMetadata");
           if (mounted) {
-            // Sort by createdOn desc (newest first) if createdOn is ISO string
-            all.sort((a, b) => (b.createdOn > a.createdOn ? 1 : -1));
+            // Sort by modifiedOn desc (newest first) if modifiedOn is ISO string
+            all.sort((a, b) => (b.modifiedOn > a.modifiedOn ? 1 : -1));
             setFiles(all);
             setLoading(false);
           }
@@ -86,16 +60,33 @@ export default function Home() {
         }
       })();
     }
-
-    return () => {
-    //   mounted = false;
-    //   // Close DB on unmount
-    //   if (dbRef.current) {
-    //     try { dbRef.current.close(); } catch (e) {}
-    //     dbRef.current = null;
-
+    // else{
+    //   (async () => {
+    //   try {
+    //     // Open DB and create store if not present
+    //     const db = await openDB("TestCaseDB", 1);
+    //     setIDBConnection(db);      
+    //   } catch (err) {
+    //     console.error("Failed to open/load DB:", err);
     //   }
-    };
+    // })();
+    // }
+
+    
+
+    // return () => {
+    // //   mounted = false;
+    // //   // Close DB on unmount
+    // //   if (dbRef.current) {
+    // //     try { dbRef.current.close(); } catch (e) {}
+    // //     dbRef.current = null;
+    //   if (iDBConnection) {
+    //     // try { iDBConnection.close(); } catch (e) {}
+    //     // setIDBConnection(prev => {prev.close(); return null});
+    //     console.log("db closed");
+    //   }
+    // //   }
+    // };
   }, [iDBConnection]);
 
     const addNewFile = async (name) => {
@@ -103,14 +94,14 @@ export default function Home() {
     if (!name) return;
     const record = {
       fileName: name,
-      createdOn: new Date().toISOString(), // use ISO string for easy sorting
+      modifiedOn: new Date().toISOString(), // use ISO string for easy sorting
     };
     try {
       await putToStore(iDBConnection, "testCaseFileMetadata", record);
       // refresh local state (you could also optimistic-update)
       console.log("addNewFile", iDBConnection);
       const all = await getAllFilesMetadataFromStore(iDBConnection, "testCaseFileMetadata");
-      all.sort((a, b) => (b.createdOn > a.createdOn ? 1 : -1));
+      all.sort((a, b) => (b.modifiedOn > a.modifiedOn ? 1 : -1));
       setFiles(all);
     } catch (err) {
       console.error("Error adding file metadata:", err);
@@ -118,12 +109,112 @@ export default function Home() {
     }
   };
 
+    const saveImportedTestCasesDataOnIndexedDB = async (testCaseFileName, listOfTestCasesData, firstRowFields) => {
+        try {
+            const result = await putToStore(iDBConnection, "testCaseData", { fileName: testCaseFileName, listOfTestCasesData, firstRowFields });
+            console.log("on record insertion to db,", result);
+            // setIsUnsaved(false);
+            if (result && result.success) {
+                console.log("Record saved:", result);
+            }
+        }
+        catch (error) {
+            console.log("error on record insertion to db,", error);
+        }
+    }
+
+  const saveImportedFileOnIndexedDB = async(name) =>{
+    console.log(name);
+    console.log(!!iDBConnection);
+    //checking if db connection undha ledha ani
+    if(iDBConnection){
+      if (!name) return;
+      // const uniqueFileName = await generateUniqueFileName(iDBConnection, "testCaseFileMetadata", name)
+      // console.log("does a file exists ", doesAFileNameExistds);
+      // console.log("unique file name", uniqueFileName);
+    // if(doesAFileNameExistds){
+    //   console.log("does a filename exists", doesAFileNameExistds);
+      // for(let counter=1;;counter++){
+      //   console.log("inside for loop ")
+      //   console.log("fileExists",await fileExists(iDBConnection,"testCaseFileMetadata", name +" ("+ counter + ")"))
+      //   if(!await fileExists(iDBConnection,"testCaseFileMetadata", name +" ("+ counter + ")")){
+      //     name = name +" ("+ counter + ")";
+      //     console.log(name);
+      //     break;
+      //   }
+      // }
+    // }
+    const record = {
+      fileName: name,
+      modifiedOn: new Date().toISOString(), // use ISO string for easy sorting
+    };
+    try {
+      await putToStore(iDBConnection, "testCaseFileMetadata", record);
+      // refresh local state (you could also optimistic-update)
+      console.log("addNewFile", iDBConnection);
+      const all = await getAllFilesMetadataFromStore(iDBConnection, "testCaseFileMetadata");
+      all.sort((a, b) => (b.modifiedOn > a.modifiedOn ? 1 : -1));
+      setFiles(all);
+    } catch (err) {
+      console.error("Error adding file metadata:", err);
+      // alert("Failed to add file. Check console.");
+    }
+    }
+
+  }
+
+  const onFileSelect = async (e) => {
+      console.log("on file pick", e.target.files[0]);
+      const fileName = e.target.files[0].name;
+      const fileNameWithoutExtension = fileName.substring(0, fileName.lastIndexOf("."));
+      console.log("fileName", fileName);
+      const file = e.target.files[0];
+      if(!file) return; //if file null or invalid aithey return chesestham
+      const arrayOfRows = await excelReader(file);
+      const [importedFileFirstRowFieldsData, importedListOfTestCases] =  convertArrayOfRowsIntoListOfTestCases(arrayOfRows);
+      // setIsImported(true); //TODO
+      console.log(iDBConnection);
+          // console.log("fileExists", await fileExists(iDBConnection, "testCaseFileMetadata", "Test Scenario 1"))
+      const uniqueFileName = await generateUniqueFileName(iDBConnection, "testCaseFileMetadata", fileNameWithoutExtension);
+      saveImportedFileOnIndexedDB(uniqueFileName);
+      saveImportedTestCasesDataOnIndexedDB(uniqueFileName, importedListOfTestCases, importedFileFirstRowFieldsData);
+      
+
+    }
+
+    //if emaina import chesthey ee use effect trigger avthadhi and then navigation to create page ki pothaam
+    useEffect(()=>{
+      if(isImported){
+
+        navigate("/create");
+      }
+    }, [isImported])
+
   return (
     <div className={`relative min-h-screen bg-gray-50 p-6 transition-opacity duration-300 ${fading ? "opacity-0" : "opacity-100"}`}>
       {/* Title */}
-      <h1 className="text-3xl font-bold text-center mb-16 text-gray-800">
-        My Home Page
-      </h1>
+      <div className="relative ">
+
+  <div class="text-center mb-8">
+  <h1 class="text-3xl font-bold text-blue-600">
+    Test Case Builder
+  </h1>
+  <p class="text-gray-500 mt-1">
+    Create and manage your test cases
+  </p>
+</div>
+
+      
+
+     
+      <FilePicker onFileSelect={onFileSelect} />
+
+     
+
+
+
+      </div>
+      
 
       {/* Cards */}
       <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
@@ -143,7 +234,7 @@ export default function Home() {
        {loading ? (
         <div>Loading…</div>
       ) : files.length === 0 ? (
-        <div>No test case files yet. Click “Add new file”.</div>
+        <div>You haven’t added any scenarios yet. Click + to get started!.</div>
       ) : (
         // <div style={{ display: "grid", gap: 12 }}>
         <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
@@ -162,7 +253,7 @@ export default function Home() {
         +
       </button>
 
-        <Dialog open={openDialog} onClose={()=>setOpenDialog(prevState => !prevState)} onSave= {addNewFile}/>
+        <Dialog open={openDialog} onClose={()=>setOpenDialog(prevState => !prevState)} onSave= {addNewFile} title="Create new Test Cases" />
 
 
     </div>
